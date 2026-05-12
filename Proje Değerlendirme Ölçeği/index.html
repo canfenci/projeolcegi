@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Proje Performans Değerlendirme</title>
+  <!-- Tailwind + Font Awesome + Dexie + jsPDF -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    /* Dark mode geçişi için */
+    body.dark {
+      background-color: #1a202c;
+      color: #e2e8f0;
+    }
+    .dark .card {
+      background-color: #2d3748;
+      border-color: #4a5568;
+    }
+    .dark input, .dark select, .dark textarea {
+      background-color: #4a5568;
+      color: #f7fafc;
+      border-color: #718096;
+    }
+    .dark .modal-content {
+      background-color: #2d3748;
+    }
+    /* geçiş efekti */
+    * { transition: background-color 0.2s, color 0.2s; }
+  </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900">
+
+<div id="app" class="container mx-auto p-4 max-w-6xl">
+  <!-- HEADER -->
+  <div class="flex flex-wrap justify-between items-center mb-6 gap-2">
+    <h1 class="text-2xl font-bold">📋 Proje Performans Ölçeği</h1>
+    <div class="flex items-center gap-4">
+      <div id="datetime" class="text-sm bg-white dark:bg-gray-800 p-2 rounded shadow">Yükleniyor...</div>
+      <button id="darkModeToggle" class="bg-gray-200 dark:bg-gray-700 p-2 rounded-full w-10 h-10">
+        <i class="fas fa-moon dark:hidden"></i><i class="fas fa-sun hidden dark:inline"></i>
+      </button>
+      <button id="settingsBtn" class="bg-blue-500 text-white px-3 py-1 rounded"><i class="fas fa-cog"></i> Ayarlar</button>
+    </div>
+  </div>
+  <!-- MOD SEÇİCİ -->
+  <div class="flex flex-wrap gap-2 items-center mb-4">
+    <span class="font-semibold">📁 Mod:</span>
+    <select id="modSelect" class="border p-1 rounded dark:bg-gray-800"></select>
+    <button id="addModBtn" class="bg-green-500 text-white px-2 rounded"><i class="fas fa-plus"></i> Mod Ekle</button>
+    <button id="backupBtn" class="bg-purple-500 text-white px-3 py-1 rounded ml-auto"><i class="fas fa-download"></i> Yedekle</button>
+    <button id="restoreBtn" class="bg-orange-500 text-white px-3 py-1 rounded"><i class="fas fa-upload"></i> Geri Yükle</button>
+    <input type="file" id="restoreFile" accept=".json" class="hidden">
+  </div>
+
+  <!-- ÖĞRENCİ EKLEME FORMU -->
+  <div class="card bg-white dark:bg-gray-800 p-4 rounded shadow mb-6">
+    <h2 class="text-xl font-semibold mb-2">➕ Yeni Öğrenci</h2>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+      <input type="text" id="studentName" placeholder="Ad" class="border p-2 rounded dark:bg-gray-700">
+      <input type="text" id="studentSurname" placeholder="Soyad" class="border p-2 rounded dark:bg-gray-700">
+      <input type="text" id="studentClass" placeholder="Sınıf" class="border p-2 rounded dark:bg-gray-700">
+      <input type="text" id="studentNo" placeholder="No" class="border p-2 rounded dark:bg-gray-700">
+    </div>
+    <button id="addStudentBtn" class="mt-2 bg-blue-600 text-white px-4 py-1 rounded">Öğrenci Ekle</button>
+  </div>
+
+  <!-- ÖĞRENCİ LİSTESİ + ARAMA/FİLTRE -->
+  <div class="mb-4">
+    <input type="text" id="studentSearch" placeholder="🔍 Öğrenci ara (ad, soyad, sınıf, no)" class="w-full p-2 border rounded dark:bg-gray-800">
+  </div>
+  <div id="studentList" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+</div>
+
+<!-- Modal: Görev Ekle / Düzenle / Kriter Yönetimi -->
+<div id="taskModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 p-4">
+  <div class="modal-content bg-white dark:bg-gray-800 rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto p-5">
+    <div class="flex justify-between"><h3 id="modalTitle" class="text-xl font-bold">Görev Ekle</h3><button id="closeModal" class="text-2xl">&times;</button></div>
+    <input type="hidden" id="editTaskId">
+    <input type="hidden" id="taskStudentId">
+    
+    <div class="mt-3">
+      <label>Ders:</label>
+      <select id="taskDers" class="w-full border p-1 rounded dark:bg-gray-700"></select>
+      <div class="mt-1"><input type="text" id="manualDers" placeholder="Yeni ders adı" class="w-full border p-1 rounded dark:bg-gray-700"><button id="addManualDersBtn" class="text-sm bg-gray-500 text-white px-2 rounded">Ekle</button></div>
+    </div>
+    <div class="mt-2"><label>Konu:</label><input type="text" id="taskKonu" class="w-full border p-1 rounded dark:bg-gray-700"></div>
+    <div class="mt-2"><label>Teslim Tarihi:</label><input type="date" id="taskDeadline" class="w-full border p-1 rounded dark:bg-gray-700"></div>
+    <div class="mt-2"><label>Etiketler (virgülle ayır):</label><input type="text" id="taskEtiket" placeholder="Grup Projesi, Sunum" class="w-full border p-1 rounded dark:bg-gray-700"></div>
+    
+    <!-- dinamik kriterler -->
+    <div class="mt-4"><h4 class="font-bold">Değerlendirme Kriterleri (toplam 100 puan)</h4>
+      <div id="criteriaContainer" class="space-y-2 max-h-60 overflow-y-auto border p-2 rounded"></div>
+      <button id="addCriterionBtn" class="mt-2 bg-green-600 text-white px-2 py-1 text-sm rounded"><i class="fas fa-plus"></i> Kriter Ekle</button>
+      <div id="totalScoreWarning" class="text-red-500 text-sm mt-1 hidden">Toplam puan 100 olmalıdır!</div>
+    </div>
+    
+    <div class="mt-4 flex justify-end gap-2">
+      <button id="saveTaskBtn" class="bg-blue-600 text-white px-4 py-1 rounded">Kaydet</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Toplu Puan Girişi -->
+<div id="bulkModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 p-4">
+  <div class="modal-content bg-white dark:bg-gray-800 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto p-5">
+    <h3 class="text-xl font-bold">Toplu Değerlendirme</h3>
+    <label>Ders:</label><select id="bulkDers" class="border p-1 rounded dark:bg-gray-700"></select>
+    <label>Konu:</label><input id="bulkKonu" class="border p-1 rounded w-full">
+    <label>Teslim Tarihi:</label><input type="date" id="bulkDeadline">
+    <label>Etiketler:</label><input id="bulkEtiket" placeholder="ortak etiketler">
+    <div id="bulkCriteriaContainer" class="my-3"></div>
+    <div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th>Öğrenci</th><th>Puan (0-100)</th></tr></thead><tbody id="bulkStudentsTable"></tbody></table></div>
+    <button id="saveBulkBtn" class="mt-2 bg-blue-600 text-white px-4 py-1 rounded">Tümüne Kaydet</button>
+    <button id="closeBulkBtn" class="ml-2 bg-gray-500 text-white px-4 py-1 rounded">Kapat</button>
+  </div>
+</div>
+
+<!-- Ayarlar Modal -->
+<div id="settingsModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+  <div class="bg-white dark:bg-gray-800 p-5 rounded w-96">
+    <h3 class="font-bold">Ayarlar</h3>
+    <label>Okul Adı:</label><input type="text" id="schoolName" class="w-full border p-1">
+    <label>Öğretmen Ad:</label><input type="text" id="teacherName" class="w-full border p-1">
+    <label>Öğretmen Soyad:</label><input type="text" id="teacherSurname" class="w-full border p-1">
+    <button id="saveSettingsBtn" class="mt-3 bg-blue-600 text-white px-3 py-1 rounded">Kaydet</button>
+    <button id="closeSettingsBtn" class="mt-1 text-sm">Kapat</button>
+  </div>
+</div>
+
+<script>
+  // ---------- Dexie DB ----------
+  const db = new Dexie('ProjePerformansDB');
+  db.version(1).stores({
+    mods: '++id, name',
+    students: '++id, modId, name, surname, class, no',
+    tasks: '++id, studentId, modId, ders, konu, deadline, submitted, totalScore, criteriaData, etiketler',
+    settings: 'key'
+  });
+  
+  // Varsayılan modlar
+  async function initDB() {
+    const modCount = await db.mods.count();
+    if (modCount === 0) {
+      await db.mods.bulkAdd([{name:'Mod 1'}, {name:'Mod 2'}]);
+    }
+    const ayarlar = await db.settings.get('info');
+    if (!ayarlar) await db.settings.put({key:'info', okul:'', ogretmenAd:'', ogretmenSoyad:''});
+  }
+  initDB();
+  
+  let currentModId = 1;
+  let currentStudentIdForTask = null;
+  let currentCriteria = []; // {id, text, maxScore}
+  let totalPossible = 0;
+  
+  // Varsayılan kriterler (sabit ID'lerle)
+  function getDefaultCriteria() {
+    return [
+      {id: 'c1', text: 'Planlama ve hazırlık', maxScore: 10},
+      {id: 'c2', text: 'Ödev süresince öğretmen ile diyalog kurma', maxScore: 10},
+      {id: 'c3', text: 'Farklı kaynaklardan yararlanma', maxScore: 10},
+      {id: 'c4', text: 'Bilgilerin doğruluğu', maxScore: 10},
+      {id: 'c5', text: 'Özgünlük ve yaratıcılık', maxScore: 10},
+      {id: 'c6', text: 'Türkçe’yi etkili ve doğru kullanma', maxScore: 10},
+      {id: 'c7', text: 'Ödevi görsel veya somut materyallerle destekleme', maxScore: 10},
+      {id: 'c8', text: 'Düzen ve temizlik', maxScore: 10},
+      {id: 'c9', text: 'Ödevi bilimsel analiz etme, tablo ve grafiklerle destekleme', maxScore: 10},
+      {id: 'c10', text: 'Zamanında teslim', maxScore: 10}
+    ];
+  }
+  
+  function loadCriteriaForTask() {
+    let stored = localStorage.getItem(`criteria_mod_${currentModId}`);
+    if(stored) currentCriteria = JSON.parse(stored);
+    else currentCriteria = getDefaultCriteria();
+    recalculateTotalPossible();
+    renderCriteriaEditor();
+  }
+  
+  function recalculateTotalPossible() {
+    totalPossible = currentCriteria.reduce((sum, c) => sum + c.maxScore, 0);
+  }
+  
+  function renderCriteriaEditor() {
+    const container = document.getElementById('criteriaContainer');
+    container.innerHTML = '';
+    currentCriteria.forEach((c, idx) => {
+      const div = document.createElement('div');
+      div.className = 'flex flex-wrap gap-1 items-center border-b pb-1';
+      div.innerHTML = `
+        <input type="text" value="${escapeHtml(c.text)}" data-id="${c.id}" class="criteria-text flex-1 border p-1 text-sm dark:bg-gray-700">
+        <span>Maks:</span>
+        <input type="number" value="${c.maxScore}" data-id="${c.id}" class="criteria-max w-16 border p-1 text-sm dark:bg-gray-700" min="1" step="1">
+        <span>Puan:</span>
+        <input type="number" value="0" data-id="${c.id}" class="criteria-score w-20 border p-1 text-sm dark:bg-gray-700" min="0" :max="${c.maxScore}" step="1">
+        <button class="remove-criteria text-red-500" data-id="${c.id}"><i class="fas fa-trash"></i></button>
+      `;
+      container.appendChild(div);
+    });
+    // event listener'lar
+    document.querySelectorAll('.criteria-text').forEach(inp => inp.addEventListener('change', (e) => {
+      let id = e.target.dataset.id;
+      let newText = e.target.value;
+      let crit = currentCriteria.find(c => c.id === id);
+      if(crit) crit.text = newText;
+      saveCriteriaToLocal();
+    }));
+    document.querySelectorAll('.criteria-max').forEach(inp => inp.addEventListener('change', (e) => {
+      let id = e.target.dataset.id;
+      let newMax = parseInt(e.target.value);
+      let crit = currentCriteria.find(c => c.id === id);
+      if(crit && !isNaN(newMax) && newMax>0) crit.maxScore = newMax;
+      recalculateTotalPossible();
+      saveCriteriaToLocal();
+      updateTotalWarning();
+    }));
+    document.querySelectorAll('.remove-criteria').forEach(btn => btn.addEventListener('click', (e) => {
+      let id = btn.dataset.id;
+      currentCriteria = currentCriteria.filter(c => c.id !== id);
+      saveCriteriaToLocal();
+      renderCriteriaEditor();
+    }));
+    document.querySelectorAll('.criteria-score').forEach(inp => inp.addEventListener('input', () => updateTotalWarning()));
+    updateTotalWarning();
+  }
+  
+  function saveCriteriaToLocal() {
+    localStorage.setItem(`criteria_mod_${currentModId}`, JSON.stringify(currentCriteria));
+    recalculateTotalPossible();
+  }
+  
+  function updateTotalWarning() {
+    let scores = Array.from(document.querySelectorAll('.criteria-score')).map(inp => parseInt(inp.value) || 0);
+    let sum = scores.reduce((a,b)=>a+b,0);
+    let warning = document.getElementById('totalScoreWarning');
+    if(sum !== 100) warning.classList.remove('hidden');
+    else warning.classList.add('hidden');
+    return sum === 100;
+  }
+  
+  function getScoresFromUI() {
+    let scores = [];
+    document.querySelectorAll('.criteria-score').forEach(inp => {
+      scores.push(parseInt(inp.value) || 0);
+    });
+    return scores;
+  }
+  
+  function loadScoresToUI(scoresArray) {
+    let inputs = document.querySelectorAll('.criteria-score');
+    inputs.forEach((inp, idx) => { if(scoresArray[idx] !== undefined) inp.value = scoresArray[idx] });
+    updateTotalWarning();
+  }
+  
+  // Ders listesi (global, manuel eklenenler localStorage'da)
+  let dersListesi = ['Türkçe','Matematik','Fen Bilimleri','İnkılap Tarihi','Sosyal Bilgiler','İngilizce','Din Kültürü','Beden Eğitimi','Bilişim Teknolojileri','Görsel Sanatlar','Müzik','Teknoloji ve Tasarım'];
+  function loadDersler() {
+    let saved = localStorage.getItem('dersListesi');
+    if(saved) dersListesi = JSON.parse(saved);
+    renderDersSelects();
+  }
+  function renderDersSelects() {
+    let selects = document.querySelectorAll('.ders-select');
+    selects.forEach(sel => {
+      let current = sel.value;
+      sel.innerHTML = dersListesi.map(d => `<option ${d===current ? 'selected' : ''}>${d}</option>`).join('');
+      sel.innerHTML += '<option value="__manuel">+ Manuel Ekle</option>';
+    });
+  }
+  function addManualDers(ad) {
+    if(ad && !dersListesi.includes(ad)) {
+      dersListesi.push(ad);
+      localStorage.setItem('dersListesi', JSON.stringify(dersListesi));
+      renderDersSelects();
+    }
+  }
+  
+  // Öğrenci listeleme ve CRUD
+  async function renderStudents() {
+    let students = await db.students.where('modId').equals(currentModId).toArray();
+    let searchTerm = document.getElementById('studentSearch').value.toLowerCase();
+    students = students.filter(s => (s.name+' '+s.surname+' '+s.class+' '+s.no).toLowerCase().includes(searchTerm));
+    const container = document.getElementById('studentList');
+    container.innerHTML = '';
+    for(let stu of students) {
+      let tasks = await db.tasks.where('studentId').equals(stu.id).toArray();
+      let card = document.createElement('div');
+      card.className = 'card bg-white dark:bg-gray-800 p-3 rounded shadow cursor-pointer hover:shadow-lg';
+      card.innerHTML = `
+        <div class="flex justify-between"><span class="font-bold">${escapeHtml(stu.name)} ${escapeHtml(stu.surname)}</span><span>${escapeHtml(stu.class)} / ${escapeHtml(stu.no)}</span></div>
+        <div class="text-sm text-gray-500">📌 ${tasks.length} görev</div>
+        <div class="flex gap-2 mt-2">
+          <button class="edit-student bg-yellow-500 text-white px-2 py-1 rounded text-xs" data-id="${stu.id}">Düzenle</button>
+          <button class="delete-student bg-red-500 text-white px-2 py-1 rounded text-xs" data-id="${stu.id}">Sil</button>
+          <button class="bulk-eval-student bg-purple-500 text-white px-2 py-1 rounded text-xs" data-id="${stu.id}">Toplu Değ.</button>
+        </div>
+        <div class="tasks-for-student mt-2 hidden border-t pt-2"><div class="font-semibold">Görevler</div><div class="task-list" data-student="${stu.id}"></div><button class="add-task-btn bg-green-600 text-white text-xs px-2 py-1 mt-1" data-id="${stu.id}">+ Görev Ekle</button></div>
+      `;
+      container.appendChild(card);
+      // event listeners
+      card.querySelector('.edit-student')?.addEventListener('click', (e) => { e.stopPropagation(); editStudent(stu); });
+      card.querySelector('.delete-student')?.addEventListener('click', (e) => { e.stopPropagation(); deleteStudent(stu.id); });
+      card.querySelector('.bulk-eval-student')?.addEventListener('click', (e) => { e.stopPropagation(); openBulkForStudent(stu.id); });
+      card.querySelector('.add-task-btn')?.addEventListener('click', (e) => { e.stopPropagation(); openTaskModal(null, stu.id); });
+      card.addEventListener('click', (e) => {
+        if(e.target.classList.contains('add-task-btn') || e.target.classList.contains('edit-student') || e.target.classList.contains('delete-student') || e.target.classList.contains('bulk-eval-student')) return;
+        let taskDiv = card.querySelector('.tasks-for-student');
+        taskDiv.classList.toggle('hidden');
+        if(!taskDiv.classList.contains('hidden')) renderTasksForStudent(stu.id, taskDiv.querySelector('.task-list'));
+      });
+    }
+  }
+  
+  async function renderTasksForStudent(studentId, container) {
+    let tasks = await db.tasks.where('studentId').equals(studentId).and(t => t.modId === currentModId).toArray();
+    container.innerHTML = '';
+    for(let t of tasks) {
+      let row = document.createElement('div');
+      row.className = 'border-b py-1 text-sm';
+      row.innerHTML = `
+        <div><b>${escapeHtml(t.ders)}</b> - ${escapeHtml(t.konu)}<br>📅 ${t.deadline || 'belirsiz'} | 🏷️ ${t.etiketler || ''}<br>
+        Puan: ${t.totalScore}/100 | 
+        <label><input type="radio" name="submit_${t.id}" value="1" ${t.submitted ? 'checked' : ''}> Teslim etti</label>
+        <label><input type="radio" name="submit_${t.id}" value="0" ${!t.submitted ? 'checked' : ''}> Teslim etmedi</label>
+        <button class="edit-task text-blue-500 ml-2" data-id="${t.id}"><i class="fas fa-edit"></i></button>
+        <button class="delete-task text-red-500" data-id="${t.id}"><i class="fas fa-trash"></i></button>
+        <button class="pdf-task text-green-500" data-id="${t.id}"><i class="fas fa-file-pdf"></i></button>
+        </div>
+      `;
+      container.appendChild(row);
+      row.querySelector(`input[type="radio"][value="1"]`)?.addEventListener('change', async () => { await db.tasks.update(t.id, {submitted: true}); renderStudents(); });
+      row.querySelector(`input[type="radio"][value="0"]`)?.addEventListener('change', async () => { await db.tasks.update(t.id, {submitted: false}); renderStudents(); });
+      row.querySelector('.edit-task')?.addEventListener('click', (e) => { e.stopPropagation(); openTaskModal(t, studentId); });
+      row.querySelector('.delete-task')?.addEventListener('click', async (e) => { e.stopPropagation(); if(confirm('Sil?')) await db.tasks.delete(t.id); renderStudents(); });
+      row.querySelector('.pdf-task')?.addEventListener('click', (e) => { e.stopPropagation(); generatePdfForTask(t, studentId); });
+    }
+  }
+  
+  async function editStudent(stu) {
+    let newName = prompt('Ad', stu.name);
+    if(newName) stu.name = newName;
+    let newSurname = prompt('Soyad', stu.surname);
+    if(newSurname) stu.surname = newSurname;
+    let newClass = prompt('Sınıf', stu.class);
+    if(newClass) stu.class = newClass;
+    let newNo = prompt('No', stu.no);
+    if(newNo) stu.no = newNo;
+    await db.students.update(stu.id, stu);
+    renderStudents();
+  }
+  async function deleteStudent(id) { if(confirm('Öğrenci silinecek, tüm görevleri de silinsin mi?')) { await db.tasks.where('studentId').equals(id).delete(); await db.students.delete(id); renderStudents(); } }
+  
+  function openTaskModal(task, studentId) {
+    currentStudentIdForTask = studentId;
+    loadCriteriaForTask();
+    document.getElementById('editTaskId').value = task?.id || '';
+    document.getElementById('taskStudentId').value = studentId;
+    document.getElementById('taskKonu').value = task?.konu || '';
+    document.getElementById('taskDeadline').value = task?.deadline || '';
+    document.getElementById('taskEtiket').value = task?.etiketler || '';
+    if(task && task.criteriaData) loadScoresToUI(task.criteriaData.scores);
+    else loadScoresToUI(new Array(currentCriteria.length).fill(0));
+    renderDersSelects();
+    if(task) document.getElementById('taskDers').value = task.ders;
+    else document.getElementById('taskDers').value = dersListesi[0];
+    document.getElementById('taskModal').classList.remove('hidden');
+    document.getElementById('modalTitle').innerText = task ? 'Görev Düzenle' : 'Yeni Görev';
+  }
+  
+  document.getElementById('saveTaskBtn').onclick = async () => {
+    if(!updateTotalWarning()) { alert('Toplam puan 100 olmalı!'); return; }
+    let scores = getScoresFromUI();
+    let total = scores.reduce((a,b)=>a+b,0);
+    let studentId = parseInt(document.getElementById('taskStudentId').value);
+    let ders = document.getElementById('taskDers').value;
+    let konu = document.getElementById('taskKonu').value;
+    let deadline = document.getElementById('taskDeadline').value;
+    let etiketler = document.getElementById('taskEtiket').value;
+    let criteriaData = { texts: currentCriteria.map(c=>c.text), maxScores: currentCriteria.map(c=>c.maxScore), scores };
+    let taskId = document.getElementById('editTaskId').value;
+    let submitted = false; // varsayılan
+    if(taskId) {
+      await db.tasks.update(parseInt(taskId), { ders, konu, deadline, totalScore: total, criteriaData, etiketler, submitted });
+    } else {
+      await db.tasks.add({ studentId, modId: currentModId, ders, konu, deadline, totalScore: total, criteriaData, etiketler, submitted: false });
+    }
+    document.getElementById('taskModal').classList.add('hidden');
+    renderStudents();
+  };
+  
+  // TOPLU PUAN GİRİŞİ (basit: tüm öğrencilere aynı puan ve kriter seti)
+  async function openBulkForStudent(studentId) {
+    let students = [await db.students.get(studentId)];
+    showBulkModal(students);
+  }
+  async function openBulkAll() {
+    let students = await db.students.where('modId').equals(currentModId).toArray();
+    showBulkModal(students);
+  }
+  function showBulkModal(students) {
+    loadCriteriaForTask();
+    renderDersSelects();
+    document.getElementById('bulkDers').value = dersListesi[0];
+    document.getElementById('bulkKonu').value = '';
+    document.getElementById('bulkDeadline').value = '';
+    document.getElementById('bulkEtiket').value = '';
+    let tbody = document.getElementById('bulkStudentsTable');
+    tbody.innerHTML = '';
+    students.forEach(s => {
+      let row = tbody.insertRow();
+      row.insertCell(0).innerText = `${s.name} ${s.surname}`;
+      row.insertCell(1).innerHTML = `<input type="number" class="bulk-score" data-id="${s.id}" min="0" max="100" step="1" value="0">`;
+    });
+    document.getElementById('bulkModal').classList.remove('hidden');
+  }
+  document.getElementById('saveBulkBtn').onclick = async () => {
+    let ders = document.getElementById('bulkDers').value;
+    let konu = document.getElementById('bulkKonu').value;
+    let deadline = document.getElementById('bulkDeadline').value;
+    let etiketler = document.getElementById('bulkEtiket').value;
+    let scoresInput = document.querySelectorAll('.bulk-score');
+    let studentIds = [];
+    let puanlar = [];
+    scoresInput.forEach(inp => { studentIds.push(parseInt(inp.dataset.id)); puanlar.push(parseInt(inp.value) || 0); });
+    for(let i=0; i<studentIds.length; i++) {
+      let toplamPuan = puanlar[i];
+      // kriterleri basit şekilde orantılı dağıt? Kullanıcı direkt puan verdiği için totalScore = puanlar[i] olarak kaydedelim.
+      let scoresArray = new Array(currentCriteria.length).fill(0);
+      // dağıtım yapmak istemiyorsak, sadece totalScore'u kullan. Kriterlerin detayını boş bırakabiliriz.
+      let criteriaData = { texts: currentCriteria.map(c=>c.text), maxScores: currentCriteria.map(c=>c.maxScore), scores: scoresArray };
+      await db.tasks.add({ studentId: studentIds[i], modId: currentModId, ders, konu, deadline, totalScore: toplamPuan, criteriaData, etiketler, submitted: false });
+    }
+    document.getElementById('bulkModal').classList.add('hidden');
+    renderStudents();
+  };
+  
+  // PDF
+  async function generatePdfForTask(task, studentId) {
+    const { jsPDF } = window.jspdf;
+    let student = await db.students.get(studentId);
+    let settings = await db.settings.get('info');
+    let doc = new jsPDF();
+    doc.text(`Okul: ${settings?.okul || ''}`, 10, 10);
+    doc.text(`Öğretmen: ${settings?.ogretmenAd || ''} ${settings?.ogretmenSoyad || ''}`, 10, 20);
+    doc.text(`Öğrenci: ${student.name} ${student.surname} (${student.class} / ${student.no})`, 10, 30);
+    doc.text(`Ders: ${task.ders} - Konu: ${task.konu}`, 10, 40);
+    doc.text(`Teslim Durumu: ${task.submitted ? 'Teslim etti' : 'Teslim etmedi'}`, 10, 50);
+    doc.text(`Toplam Puan: ${task.totalScore}/100`, 10, 60);
+    let tableData = [];
+    if(task.criteriaData?.texts) {
+      for(let i=0; i<task.criteriaData.texts.length; i++) {
+        tableData.push([task.criteriaData.texts[i], `${task.criteriaData.scores[i]}/${task.criteriaData.maxScores[i]}`]);
+      }
+    }
+    doc.autoTable({ startY: 70, head: [['Kriter', 'Puan']], body: tableData });
+    doc.save(`${student.name}_${task.ders}_not.pdf`);
+  }
+  
+  // Yedekleme
+  document.getElementById('backupBtn').onclick = async () => {
+    let allData = { mods: await db.mods.toArray(), students: await db.students.toArray(), tasks: await db.tasks.toArray(), settings: await db.settings.toArray(), dersListesi, criteria: Object.fromEntries(Object.keys(localStorage).filter(k=>k.startsWith('criteria_mod_')).map(k=>[k, localStorage.getItem(k)]) ) };
+    let dataStr = JSON.stringify(allData);
+    let blob = new Blob([dataStr], {type: 'application/json'});
+    let url = URL.createObjectURL(blob);
+    let a = document.createElement('a');
+    a.href = url; a.download = `pwa_yedek_${new Date().toISOString()}.json`; a.click();
+    URL.revokeObjectURL(url);
+  };
+  document.getElementById('restoreBtn').onclick = () => document.getElementById('restoreFile').click();
+  document.getElementById('restoreFile').onchange = async (e) => {
+    let file = e.target.files[0];
+    if(!file) return;
+    let text = await file.text();
+    let data = JSON.parse(text);
+    await db.mods.clear(); await db.students.clear(); await db.tasks.clear(); await db.settings.clear();
+    await db.mods.bulkAdd(data.mods);
+    await db.students.bulkAdd(data.students);
+    await db.tasks.bulkAdd(data.tasks);
+    await db.settings.bulkAdd(data.settings);
+    if(data.dersListesi) { dersListesi = data.dersListesi; localStorage.setItem('dersListesi', JSON.stringify(dersListesi)); }
+    if(data.criteria) Object.entries(data.criteria).forEach(([k,v])=>localStorage.setItem(k,v));
+    renderStudents(); loadDersler();
+    alert('Yedek yüklendi!');
+  };
+  
+  // Mod işlemleri
+  async function loadMods() {
+    let mods = await db.mods.toArray();
+    let select = document.getElementById('modSelect');
+    select.innerHTML = mods.map(m => `<option value="${m.id}" ${m.id===currentModId ? 'selected' : ''}>${escapeHtml(m.name)}</option>`).join('');
+    select.onchange = () => { currentModId = parseInt(select.value); renderStudents(); loadCriteriaForTask(); };
+  }
+  document.getElementById('addModBtn').onclick = async () => {
+    let name = prompt('Yeni mod adı');
+    if(name) { await db.mods.add({name}); loadMods(); }
+  };
+  
+  // Saat, dark mode, settings
+  function updateDateTime() {
+    let now = new Date();
+    document.getElementById('datetime').innerText = now.toLocaleDateString('tr-TR') + ' ' + now.toLocaleTimeString('tr-TR');
+  }
+  setInterval(updateDateTime, 1000);
+  document.getElementById('darkModeToggle').onclick = () => document.body.classList.toggle('dark');
+  document.getElementById('settingsBtn').onclick = async () => {
+    let s = await db.settings.get('info');
+    document.getElementById('schoolName').value = s?.okul || '';
+    document.getElementById('teacherName').value = s?.ogretmenAd || '';
+    document.getElementById('teacherSurname').value = s?.ogretmenSoyad || '';
+    document.getElementById('settingsModal').classList.remove('hidden');
+  };
+  document.getElementById('saveSettingsBtn').onclick = async () => {
+    await db.settings.put({key:'info', okul: document.getElementById('schoolName').value, ogretmenAd: document.getElementById('teacherName').value, ogretmenSoyad: document.getElementById('teacherSurname').value});
+    document.getElementById('settingsModal').classList.add('hidden');
+  };
+  document.getElementById('closeSettingsBtn').onclick = () => document.getElementById('settingsModal').classList.add('hidden');
+  document.getElementById('closeModal').onclick = () => document.getElementById('taskModal').classList.add('hidden');
+  document.getElementById('closeBulkBtn').onclick = () => document.getElementById('bulkModal').classList.add('hidden');
+  document.getElementById('addManualDersBtn').onclick = () => { let newDers = document.getElementById('manualDers').value.trim(); if(newDers) addManualDers(newDers); document.getElementById('manualDers').value=''; };
+  document.getElementById('addCriterionBtn').onclick = () => {
+    let newId = 'c'+Date.now()+Math.random();
+    currentCriteria.push({id: newId, text: 'Yeni Kriter', maxScore: 10});
+    saveCriteriaToLocal();
+    renderCriteriaEditor();
+  };
+  document.getElementById('addStudentBtn').onclick = async () => {
+    let name=document.getElementById('studentName').value, surname=document.getElementById('studentSurname').value, klas=document.getElementById('studentClass').value, no=document.getElementById('studentNo').value;
+    if(!name || !surname) return alert('Ad ve soyad gerekli');
+    await db.students.add({modId: currentModId, name, surname, class: klas, no});
+    document.getElementById('studentName').value=''; document.getElementById('studentSurname').value=''; document.getElementById('studentClass').value=''; document.getElementById('studentNo').value='';
+    renderStudents();
+  };
+  
+  // Hatırlatıcı bildirim (her saat kontrol)
+  async function checkDeadlineReminders() {
+    if(Notification.permission === 'granted') {
+      let today = new Date().toISOString().slice(0,10);
+      let tomorrow = new Date(Date.now()+86400000).toISOString().slice(0,10);
+      let tasks = await db.tasks.where('modId').equals(currentModId).and(t => !t.submitted && (t.deadline === today || t.deadline === tomorrow)).toArray();
+      for(let t of tasks) {
+        let student = await db.students.get(t.studentId);
+        new Notification(`Teslim Hatırlatma`, { body: `${student.name} ${student.surname} - ${t.ders} görevinin teslim tarihi ${t.deadline}` });
+      }
+    }
+  }
+  if(Notification.permission !== 'granted') Notification.requestPermission();
+  setInterval(checkDeadlineReminders, 3600000);
+  
+  function escapeHtml(str) { if(!str) return ''; return str.replace(/[&<>]/g, function(m){if(m==='&') return '&amp;'; if(m==='<') return '&lt;'; if(m==='>') return '&gt;'; return m;}); }
+  
+  // başlat
+  loadDersler();
+  loadMods();
+  renderStudents();
+  loadCriteriaForTask();
+  // toplu puan girişi butonunu header'a ekleyelim
+  let bulkAllBtn = document.createElement('button');
+  bulkAllBtn.innerText = 'Toplu Değerlendirme (Tüm Öğrenciler)';
+  bulkAllBtn.className = 'bg-purple-600 text-white px-3 py-1 rounded mb-2';
+  bulkAllBtn.onclick = openBulkAll;
+  document.querySelector('#app .flex.justify-between.items-center')?.after(bulkAllBtn);
+</script>
+</body>
+</html>
